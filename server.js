@@ -23,6 +23,8 @@ const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
 const novelRoutes = require('./routes/novelRoutes');
 const imageRoutes = require('./routes/imageRoutes');
+const annotationRoutes = require('./routes/annotationRoutes');
+const sharingRoutes = require('./routes/sharingRoutes');
 
 // Routes
 app.get('/', (req, res) => {
@@ -34,6 +36,8 @@ app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/novels', novelRoutes);
 app.use('/api/images', imageRoutes);
+app.use('/api/annotations', annotationRoutes);
+app.use('/api/sharing', sharingRoutes);
 
 // Connect to MongoDB
 const PORT = process.env.PORT || 5000;

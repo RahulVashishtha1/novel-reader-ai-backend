@@ -30,6 +30,11 @@ const UserSchema = new mongoose.Schema(
       enum: ['user', 'admin'],
       default: 'user',
     },
+    bio: {
+      type: String,
+      maxlength: [500, 'Bio cannot be more than 500 characters'],
+      default: '',
+    },
     readingStats: {
       totalReadingTime: {
         type: Number,
@@ -48,6 +53,65 @@ const UserSchema = new mongoose.Schema(
         default: 0,
       },
     },
+    readingPreferences: {
+      // Appearance preferences
+      theme: {
+        type: String,
+        enum: ['light', 'dark', 'sepia'],
+        default: 'light',
+      },
+      fontSize: {
+        type: Number,
+        default: 16,
+      },
+      fontFamily: {
+        type: String,
+        enum: ['system-ui', 'serif', 'sans-serif', 'monospace', 'dyslexic'],
+        default: 'system-ui',
+      },
+      lineSpacing: {
+        type: Number,
+        default: 1.5,
+      },
+      letterSpacing: {
+        type: Number,
+        default: 0,
+      },
+      dyslexiaFriendly: {
+        type: Boolean,
+        default: false,
+      },
+
+      // Layout preferences
+      layout: {
+        type: String,
+        enum: ['standard', 'compact', 'expanded'],
+        default: 'standard',
+      },
+      imagePosition: {
+        type: String,
+        enum: ['right', 'left', 'bottom', 'hidden'],
+        default: 'right',
+      },
+      imageSize: {
+        type: String,
+        enum: ['small', 'medium', 'large'],
+        default: 'medium',
+      },
+      toolbarPosition: {
+        type: String,
+        enum: ['right', 'left', 'top', 'hidden'],
+        default: 'right',
+      },
+      showPageNumbers: {
+        type: Boolean,
+        default: true,
+      },
+      fullWidth: {
+        type: Boolean,
+        default: false,
+      },
+    },
   },
   { timestamps: true }
 );
@@ -55,7 +119,7 @@ const UserSchema = new mongoose.Schema(
 // Hash password before saving
 UserSchema.pre('save', async function (next) {
   if (!this.isModified('password')) return next();
-  
+
   const salt = await bcrypt.genSalt(10);
   this.password = await bcrypt.hash(this.password, salt);
   next();

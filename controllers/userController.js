@@ -16,6 +16,29 @@ const getUserProfile = async (req, res) => {
   }
 };
 
+// Update user profile
+const updateUserProfile = async (req, res) => {
+  try {
+    const { name, bio } = req.body;
+
+    // Get current user
+    const user = await User.findById(req.user.userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Update fields
+    if (name) user.name = name;
+    if (bio !== undefined) user.bio = bio;
+
+    await user.save();
+
+    res.status(200).json({ user: user.toObject({ getters: true, virtuals: true }) });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 // Get user reading statistics
 const getUserStats = async (req, res) => {
   try {
@@ -27,7 +50,7 @@ const getUserStats = async (req, res) => {
     // Get additional stats
     const novels = await Novel.find({ owner: req.user.userId });
     const totalNovels = novels.length;
-    
+
     // Get reading progress for each novel
     const novelsWithProgress = novels.map(novel => {
       const progress = (novel.lastReadPage / novel.totalPages) * 100;
@@ -84,13 +107,13 @@ const updateReadingStats = async (req, res) => {
 const getAllUsers = async (req, res) => {
   try {
     const users = await User.find().select('-password');
-    
+
     // Get additional info for each user
     const usersWithInfo = await Promise.all(
       users.map(async (user) => {
         const novelCount = await Novel.countDocuments({ owner: user._id });
         const imageCount = await ImageGenerationLog.countDocuments({ user: user._id });
-        
+
         return {
           id: user._id,
           name: user.name,
@@ -123,10 +146,10 @@ const deleteUser = async (req, res) => {
 
     // Delete user's novels
     await Novel.deleteMany({ owner: userId });
-    
+
     // Delete user's image generation logs
     await ImageGenerationLog.deleteMany({ user: userId });
-    
+
     // Delete user
     await User.findByIdAndDelete(userId);
 
@@ -136,10 +159,54 @@ const deleteUser = async (req, res) => {
   }
 };
 
+// Update reading preferences
+const updateReadingPreferences = async (req, res) => {
+  try {
+    const { theme, fontSize, fontFamily, lineSpacing, letterSpacing, dyslexiaFriendly } = req.body;
+
+    // Get current user
+    const user = await User.findById(req.user.userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Update preferences
+    if (theme) user.readingPreferences.theme = theme;
+    if (fontSize) user.readingPreferences.fontSize = fontSize;
+    if (fontFamily) user.readingPreferences.fontFamily = fontFamily;
+    if (lineSpacing !== undefined) user.readingPreferences.lineSpacing = lineSpacing;
+    if (letterSpacing !== undefined) user.readingPreferences.letterSpacing = letterSpacing;
+    if (dyslexiaFriendly !== undefined) user.readingPreferences.dyslexiaFriendly = dyslexiaFriendly;
+
+    await user.save();
+
+    res.status(200).json({ preferences: user.readingPreferences });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// Get reading preferences
+const getReadingPreferences = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId).select('readingPreferences');
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    res.status(200).json({ preferences: user.readingPreferences });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 module.exports = {
   getUserProfile,
+  updateUserProfile,
   getUserStats,
   updateReadingStats,
+  updateReadingPreferences,
+  getReadingPreferences,
   getAllUsers,
   deleteUser,
 };

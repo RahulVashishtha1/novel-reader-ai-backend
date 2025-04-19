@@ -1,0 +1,145 @@
+const User = require('../models/User');
+const Novel = require('../models/Novel');
+const ImageGenerationLog = require('../models/ImageGenerationLog');
+
+// Get user profile
+const getUserProfile = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId).select('-password');
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    res.status(200).json({ user });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// Get user reading statistics
+const getUserStats = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId).select('readingStats');
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Get additional stats
+    const novels = await Novel.find({ owner: req.user.userId });
+    const totalNovels = novels.length;
+    
+    // Get reading progress for each novel
+    const novelsWithProgress = novels.map(novel => {
+      const progress = (novel.lastReadPage / novel.totalPages) * 100;
+      return {
+        id: novel._id,
+        title: novel.title,
+        progress: Math.round(progress),
+        lastReadPage: novel.lastReadPage,
+        totalPages: novel.totalPages,
+        completed: novel.completed,
+      };
+    });
+
+    res.status(200).json({
+      stats: user.readingStats,
+      totalNovels,
+      novelsWithProgress,
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// Update user reading statistics
+const updateReadingStats = async (req, res) => {
+  try {
+    const { readingTime, pagesRead, novelCompleted, imagesGenerated } = req.body;
+
+    // Get current stats
+    const user = await User.findById(req.user.userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Update stats
+    const updatedStats = {
+      totalReadingTime: user.readingStats.totalReadingTime + (readingTime || 0),
+      pagesRead: user.readingStats.pagesRead + (pagesRead || 0),
+      novelsCompleted: user.readingStats.novelsCompleted + (novelCompleted ? 1 : 0),
+      imagesGenerated: user.readingStats.imagesGenerated + (imagesGenerated || 0),
+    };
+
+    // Save updated stats
+    user.readingStats = updatedStats;
+    await user.save();
+
+    res.status(200).json({ stats: user.readingStats });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// Admin: Get all users
+const getAllUsers = async (req, res) => {
+  try {
+    const users = await User.find().select('-password');
+    
+    // Get additional info for each user
+    const usersWithInfo = await Promise.all(
+      users.map(async (user) => {
+        const novelCount = await Novel.countDocuments({ owner: user._id });
+        const imageCount = await ImageGenerationLog.countDocuments({ user: user._id });
+        
+        return {
+          id: user._id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          novelCount,
+          imageCount,
+          readingStats: user.readingStats,
+          createdAt: user.createdAt,
+        };
+      })
+    );
+
+    res.status(200).json({ users: usersWithInfo });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// Admin: Delete user
+const deleteUser = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    // Check if user exists
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Delete user's novels
+    await Novel.deleteMany({ owner: userId });
+    
+    // Delete user's image generation logs
+    await ImageGenerationLog.deleteMany({ user: userId });
+    
+    // Delete user
+    await User.findByIdAndDelete(userId);
+
+    res.status(200).json({ message: 'User deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+module.exports = {
+  getUserProfile,
+  getUserStats,
+  updateReadingStats,
+  getAllUsers,
+  deleteUser,
+};

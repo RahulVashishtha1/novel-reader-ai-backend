@@ -5,13 +5,41 @@ const ImageGenerationLog = require('../models/ImageGenerationLog');
 // Get user profile
 const getUserProfile = async (req, res) => {
   try {
+    console.log('⭐ getUserProfile called with userId:', req.user.userId);
+
     const user = await User.findById(req.user.userId).select('-password');
     if (!user) {
+      console.log('❌ User not found with ID:', req.user.userId);
       return res.status(404).json({ message: 'User not found' });
     }
 
-    res.status(200).json({ user });
+    console.log('✅ User found:', JSON.stringify(user, null, 2));
+    console.log('📊 User readingStats:', JSON.stringify(user.readingStats, null, 2));
+
+    // Get additional stats
+    const novels = await Novel.find({ owner: req.user.userId });
+    const totalNovels = novels.length;
+    console.log(`📚 Found ${totalNovels} novels for user`);
+
+    // Original response - just sending the user object directly
+    const originalResponse = { user };
+    console.log('🔄 Original response structure:', JSON.stringify(originalResponse, null, 2));
+
+    // Add stats to user object
+    const userObj = user.toObject({ getters: true });
+    userObj.stats = {
+      ...userObj.readingStats,
+      totalNovels
+    };
+
+    // Modified response with stats
+    const modifiedResponse = { user: userObj };
+    console.log('🔄 Modified response structure:', JSON.stringify(modifiedResponse, null, 2));
+
+    // Send the modified response with stats
+    res.status(200).json({ user: userObj });
   } catch (error) {
+    console.error('❌ Error getting user profile:', error);
     res.status(500).json({ message: error.message });
   }
 };
@@ -33,8 +61,20 @@ const updateUserProfile = async (req, res) => {
 
     await user.save();
 
-    res.status(200).json({ user: user.toObject({ getters: true, virtuals: true }) });
+    // Get additional stats
+    const novels = await Novel.find({ owner: req.user.userId });
+    const totalNovels = novels.length;
+
+    // Add stats to user object
+    const userObj = user.toObject({ getters: true });
+    userObj.stats = {
+      ...userObj.readingStats,
+      totalNovels
+    };
+
+    res.status(200).json({ user: userObj });
   } catch (error) {
+    console.error('Error updating user profile:', error);
     res.status(500).json({ message: error.message });
   }
 };

@@ -167,11 +167,21 @@ const getNovelPage = async (req, res) => {
     }
 
     // Get content based on file type
-    let pageContent;
+    let pageContent, metadata = {};
     if (novel.fileType === 'epub') {
-      pageContent = await getEpubPageContent(novel.filePath, pageNum);
+      const epubContent = await getEpubPageContent(novel.filePath, pageNum);
+      pageContent = epubContent.content;
+      metadata = {
+        isHtml: epubContent.isHtml,
+        chapterIndex: epubContent.chapterIndex,
+        chapterTitle: epubContent.chapterTitle,
+        wordOffset: epubContent.wordOffset,
+        wordsToTake: epubContent.wordsToTake,
+        totalChapters: epubContent.totalChapters
+      };
     } else {
       pageContent = await getTextPageContent(novel.filePath, pageNum);
+      metadata = { isHtml: false };
     }
 
     // Update last read page
@@ -181,9 +191,11 @@ const getNovelPage = async (req, res) => {
     res.status(200).json({
       page: pageNum,
       content: pageContent,
-      totalPages: novel.totalPages
+      totalPages: novel.totalPages,
+      metadata
     });
   } catch (error) {
+    console.error('Error getting novel page:', error);
     res.status(500).json({ message: error.message });
   }
 };
@@ -243,8 +255,11 @@ const getEpubPageContent = (filePath, pageNum, wordsPerPage = 600) => {
     });
 
     epubBook.on('end', () => {
-      let allText = '';
+      // Store all chapters with their HTML content
+      const chapters = [];
       let processedChapters = 0;
+      let totalWords = 0;
+      let chapterWordCounts = [];
 
       // Get text from all chapters
       epubBook.flow.forEach(chapter => {
@@ -254,27 +269,70 @@ const getEpubPageContent = (filePath, pageNum, wordsPerPage = 600) => {
             return;
           }
 
-          // Remove HTML tags
-          const plainText = text.replace(/<[^>]*>/g, '');
-          allText += plainText + ' ';
+          // Store the chapter with its HTML content
+          chapters.push({
+            id: chapter.id,
+            content: text,
+            // Also store plain text for word counting
+            plainText: text.replace(/<[^>]*>/g, '')
+          });
+
+          // Count words for pagination
+          const words = text.replace(/<[^>]*>/g, '').split(/\s+/).filter(word => word.length > 0);
+          chapterWordCounts.push(words.length);
+          totalWords += words.length;
 
           processedChapters++;
 
           // If all chapters are processed, get the page content
           if (processedChapters === epubBook.flow.length) {
-            const words = allText.split(/\s+/).filter(word => word.length > 0);
-            const startIndex = (pageNum - 1) * wordsPerPage;
-            const endIndex = Math.min(startIndex + wordsPerPage, words.length);
+            // Sort chapters by their order in the book
+            chapters.sort((a, b) => {
+              return epubBook.flow.findIndex(ch => ch.id === a.id) -
+                     epubBook.flow.findIndex(ch => ch.id === b.id);
+            });
 
-            if (startIndex >= words.length) {
-              resolve('');
+            // Calculate which chapter contains the requested page
+            const startWordIndex = (pageNum - 1) * wordsPerPage;
+            let currentWordCount = 0;
+            let targetChapterIndex = -1;
+            let wordOffsetInChapter = 0;
+
+            for (let i = 0; i < chapterWordCounts.length; i++) {
+              if (startWordIndex < currentWordCount + chapterWordCounts[i]) {
+                targetChapterIndex = i;
+                wordOffsetInChapter = startWordIndex - currentWordCount;
+                break;
+              }
+              currentWordCount += chapterWordCounts[i];
+            }
+
+            if (targetChapterIndex === -1 || startWordIndex >= totalWords) {
+              resolve({ content: '', isHtml: true });
               return;
             }
 
-            const pageWords = words.slice(startIndex, endIndex);
-            const pageContent = pageWords.join(' ');
+            // Get the target chapter
+            const targetChapter = chapters[targetChapterIndex];
+            const chapterWords = targetChapter.plainText.split(/\s+/).filter(word => word.length > 0);
 
-            resolve(pageContent);
+            // Calculate word range for this page
+            const wordsToTake = Math.min(wordsPerPage, chapterWords.length - wordOffsetInChapter);
+
+            // For HTML content, we need to extract a section that approximately contains these words
+            // This is a simplified approach - a more sophisticated approach would parse the HTML properly
+            const htmlContent = targetChapter.content;
+
+            // Return both HTML content and information about the chapter
+            resolve({
+              content: htmlContent,
+              isHtml: true,
+              chapterIndex: targetChapterIndex,
+              chapterTitle: epubBook.flow[targetChapterIndex].title || `Chapter ${targetChapterIndex + 1}`,
+              wordOffset: wordOffsetInChapter,
+              wordsToTake: wordsToTake,
+              totalChapters: chapters.length
+            });
           }
         });
       });
@@ -541,4 +599,7 @@ module.exports = {
   deleteNote,
   updateReadingProgress,
   getAllNovels,
+  // Export helper functions for use in other controllers
+  getEpubPageContent,
+  getTextPageContent,
 };

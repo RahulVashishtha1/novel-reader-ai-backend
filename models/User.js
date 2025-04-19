@@ -54,7 +54,6 @@ const UserSchema = new mongoose.Schema(
       },
     },
     readingPreferences: {
-      // Appearance preferences
       theme: {
         type: String,
         enum: ['light', 'dark', 'sepia'],
@@ -78,36 +77,6 @@ const UserSchema = new mongoose.Schema(
         default: 0,
       },
       dyslexiaFriendly: {
-        type: Boolean,
-        default: false,
-      },
-
-      // Layout preferences
-      layout: {
-        type: String,
-        enum: ['standard', 'compact', 'expanded'],
-        default: 'standard',
-      },
-      imagePosition: {
-        type: String,
-        enum: ['right', 'left', 'bottom', 'hidden'],
-        default: 'right',
-      },
-      imageSize: {
-        type: String,
-        enum: ['small', 'medium', 'large'],
-        default: 'medium',
-      },
-      toolbarPosition: {
-        type: String,
-        enum: ['right', 'left', 'top', 'hidden'],
-        default: 'right',
-      },
-      showPageNumbers: {
-        type: Boolean,
-        default: true,
-      },
-      fullWidth: {
         type: Boolean,
         default: false,
       },

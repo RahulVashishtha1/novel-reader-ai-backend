@@ -16,6 +16,13 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Create uploads directory for storing novels and images
+// Log all static file requests to help with debugging
+app.use('/uploads', (req, _res, next) => {
+  console.log(`Static file requested: ${req.url}`);
+  next();
+});
+
+// Serve static files without authentication
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Import routes
@@ -27,7 +34,7 @@ const annotationRoutes = require('./routes/annotationRoutes');
 const sharingRoutes = require('./routes/sharingRoutes');
 
 // Routes
-app.get('/', (req, res) => {
+app.get('/', (_req, res) => {
   res.send('VisNovel API is running');
 });
 

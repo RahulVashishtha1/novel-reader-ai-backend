@@ -209,36 +209,51 @@ const getTextPageContent = (filePath, pageNum, wordsPerPage = 600) => {
         return;
       }
 
-      // Split the text into words while preserving newlines and formatting
-      const words = data.split(/\s+/);
-      const totalWords = words.length;
-      const startIndex = (pageNum - 1) * wordsPerPage;
-      const endIndex = Math.min(startIndex + wordsPerPage, totalWords);
+      // Normalize line endings
+      data = data.replace(/\r\n/g, '\n');
 
-      if (startIndex >= totalWords) {
+      // Split the text into paragraphs
+      const paragraphs = data.split(/\n\s*\n/);
+
+      // Calculate approximate characters per page (average 5 chars per word)
+      const charsPerPage = wordsPerPage * 5;
+
+      // Find which paragraphs belong to the requested page
+      let currentCharCount = 0;
+      let pageStartIndex = -1;
+      let pageEndIndex = -1;
+
+      // Find the starting paragraph for this page
+      for (let i = 0; i < paragraphs.length; i++) {
+        if (currentCharCount >= (pageNum - 1) * charsPerPage && pageStartIndex === -1) {
+          pageStartIndex = i;
+        }
+
+        currentCharCount += paragraphs[i].length + 2; // +2 for paragraph separator
+
+        if (currentCharCount >= pageNum * charsPerPage && pageEndIndex === -1) {
+          pageEndIndex = i;
+          break;
+        }
+      }
+
+      // Handle edge cases
+      if (pageStartIndex === -1) {
+        pageStartIndex = 0;
+      }
+
+      if (pageEndIndex === -1 || pageEndIndex < pageStartIndex) {
+        pageEndIndex = paragraphs.length - 1;
+      }
+
+      // Extract the content for this page, preserving paragraph breaks
+      const pageContent = paragraphs.slice(pageStartIndex, pageEndIndex + 1).join('\n\n');
+
+      // If the page is empty, return an empty string
+      if (!pageContent.trim()) {
         resolve('');
         return;
       }
-
-      // Extract the content for this page
-      const pageWords = words.slice(startIndex, endIndex);
-
-      // Instead of joining with spaces, which loses formatting,
-      // we'll extract the original text segment
-      const startCharIndex = data.indexOf(pageWords[0]);
-      let endCharIndex;
-
-      if (endIndex < totalWords) {
-        // If not the last page, find where the next page would start
-        const nextPageStartWord = words[endIndex];
-        endCharIndex = data.indexOf(nextPageStartWord, startCharIndex);
-      } else {
-        // If it's the last page, go to the end of the file
-        endCharIndex = data.length;
-      }
-
-      // Extract the text segment with original formatting
-      const pageContent = data.substring(startCharIndex, endCharIndex);
 
       resolve(pageContent);
     });
@@ -269,16 +284,28 @@ const getEpubPageContent = (filePath, pageNum, wordsPerPage = 600) => {
             return;
           }
 
+          // Clean up HTML content
+          let cleanHtml = text
+            .replace(/<\/?(?:div|span|section)(?:\s[^>]*)?>/g, '') // Remove div, span, section tags
+            .replace(/<br\s*\/?>/g, '\n') // Convert <br> to newlines
+            .replace(/\s*\n\s*/g, '\n') // Normalize newlines
+            .replace(/\n{3,}/g, '\n\n'); // Limit consecutive newlines
+
+          // Extract plain text for word counting
+          const plainText = cleanHtml.replace(/<[^>]*>/g, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+
           // Store the chapter with its HTML content
           chapters.push({
             id: chapter.id,
-            content: text,
-            // Also store plain text for word counting
-            plainText: text.replace(/<[^>]*>/g, '')
+            content: cleanHtml,
+            plainText: plainText,
+            title: chapter.title || `Chapter ${chapters.length + 1}`
           });
 
           // Count words for pagination
-          const words = text.replace(/<[^>]*>/g, '').split(/\s+/).filter(word => word.length > 0);
+          const words = plainText.split(/\s+/).filter(word => word.length > 0);
           chapterWordCounts.push(words.length);
           totalWords += words.length;
 
@@ -314,24 +341,26 @@ const getEpubPageContent = (filePath, pageNum, wordsPerPage = 600) => {
 
             // Get the target chapter
             const targetChapter = chapters[targetChapterIndex];
-            const chapterWords = targetChapter.plainText.split(/\s+/).filter(word => word.length > 0);
 
-            // Calculate word range for this page
-            const wordsToTake = Math.min(wordsPerPage, chapterWords.length - wordOffsetInChapter);
-
-            // For HTML content, we need to extract a section that approximately contains these words
-            // This is a simplified approach - a more sophisticated approach would parse the HTML properly
+            // For better readability, return the entire chapter content
+            // This ensures we have complete paragraphs and proper context
             const htmlContent = targetChapter.content;
+
+            // Extract chapter title for better context
+            const chapterTitle = epubBook.flow[targetChapterIndex].title ||
+                               `Chapter ${targetChapterIndex + 1}`;
 
             // Return both HTML content and information about the chapter
             resolve({
               content: htmlContent,
               isHtml: true,
               chapterIndex: targetChapterIndex,
-              chapterTitle: epubBook.flow[targetChapterIndex].title || `Chapter ${targetChapterIndex + 1}`,
+              chapterTitle: chapterTitle,
               wordOffset: wordOffsetInChapter,
-              wordsToTake: wordsToTake,
-              totalChapters: chapters.length
+              wordsToTake: wordsPerPage,
+              totalChapters: chapters.length,
+              totalWords: totalWords,
+              chapterWords: chapterWordCounts[targetChapterIndex]
             });
           }
         });

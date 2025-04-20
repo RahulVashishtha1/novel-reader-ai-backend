@@ -28,6 +28,15 @@ const ImageGenerationLogSchema = new mongoose.Schema(
       type: String,
       required: [true, 'Prompt is required'],
     },
+    error: {
+      type: String,
+      default: null,
+    },
+    generationMethod: {
+      type: String,
+      enum: ['cloudflare', 'huggingface', 'mock'],
+      default: 'cloudflare',
+    },
   },
   { timestamps: true }
 );

@@ -209,45 +209,50 @@ const getTextPageContent = (filePath, pageNum, wordsPerPage = 600) => {
         return;
       }
 
-      // Normalize line endings
+      // Normalize line endings but preserve all other formatting
       data = data.replace(/\r\n/g, '\n');
 
-      // Split the text into paragraphs
-      const paragraphs = data.split(/\n\s*\n/);
+      // Split the text into lines to preserve all formatting
+      const lines = data.split('\n');
 
       // Calculate approximate characters per page (average 5 chars per word)
       const charsPerPage = wordsPerPage * 5;
 
-      // Find which paragraphs belong to the requested page
-      let currentCharCount = 0;
-      let pageStartIndex = -1;
-      let pageEndIndex = -1;
+      // Calculate total characters
+      const totalChars = data.length;
 
-      // Find the starting paragraph for this page
-      for (let i = 0; i < paragraphs.length; i++) {
-        if (currentCharCount >= (pageNum - 1) * charsPerPage && pageStartIndex === -1) {
-          pageStartIndex = i;
+      // Calculate start and end positions for the requested page
+      const startPos = Math.max(0, Math.min(totalChars, Math.floor((pageNum - 1) * charsPerPage)));
+      const endPos = Math.max(startPos, Math.min(totalChars, Math.floor(pageNum * charsPerPage)));
+
+      // Find the lines that contain the start and end positions
+      let currentPos = 0;
+      let startLine = 0;
+      let endLine = lines.length - 1;
+
+      // Find the start line
+      for (let i = 0; i < lines.length; i++) {
+        const lineLength = lines[i].length + 1; // +1 for the newline character
+        if (currentPos + lineLength > startPos) {
+          startLine = i;
+          break;
         }
+        currentPos += lineLength;
+      }
 
-        currentCharCount += paragraphs[i].length + 2; // +2 for paragraph separator
-
-        if (currentCharCount >= pageNum * charsPerPage && pageEndIndex === -1) {
-          pageEndIndex = i;
+      // Find the end line
+      currentPos = 0;
+      for (let i = 0; i < lines.length; i++) {
+        const lineLength = lines[i].length + 1; // +1 for the newline character
+        currentPos += lineLength;
+        if (currentPos >= endPos) {
+          endLine = i;
           break;
         }
       }
 
-      // Handle edge cases
-      if (pageStartIndex === -1) {
-        pageStartIndex = 0;
-      }
-
-      if (pageEndIndex === -1 || pageEndIndex < pageStartIndex) {
-        pageEndIndex = paragraphs.length - 1;
-      }
-
-      // Extract the content for this page, preserving paragraph breaks
-      const pageContent = paragraphs.slice(pageStartIndex, pageEndIndex + 1).join('\n\n');
+      // Extract the content for this page, preserving all formatting
+      const pageContent = lines.slice(startLine, endLine + 1).join('\n');
 
       // If the page is empty, return an empty string
       if (!pageContent.trim()) {

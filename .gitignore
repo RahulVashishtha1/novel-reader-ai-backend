@@ -16,7 +16,8 @@ yarn.lock
 .env.development.local
 .env.test.local
 .env.production.local
-.env.example
+# Keep .env.example as a template
+# .env.example
 
 # Build output
 dist/
@@ -70,7 +71,14 @@ lib-cov/
 Thumbs.db
 
 # Uploaded files
+uploads/*
+!uploads/.gitkeep
+!uploads/novels/
+!uploads/images/
+!uploads/social/
 uploads/novels/*
 uploads/images/*
+uploads/social/*
 !uploads/novels/.gitkeep
 !uploads/images/.gitkeep
+!uploads/social/.gitkeep

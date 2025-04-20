@@ -19,6 +19,7 @@ router.get('/user/all', getUserSharedContent);
 router.post('/novels/:novelId/passage', sharePassage);
 router.post('/novels/:novelId/progress', shareProgress);
 router.post('/:shareId/social-image', generateSocialImage);
+router.post('/preview', generateSocialImage);
 router.delete('/:shareId', deleteSharedContent);
 
 module.exports = router;

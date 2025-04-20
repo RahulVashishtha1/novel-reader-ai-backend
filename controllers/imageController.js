@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
 const { generateImageWithCloudflare } = require('../utils/cloudflareAI');
+const { getSummarizedText } = require('../utils/textSummarizer');
 const ImageGenerationLog = require('../models/ImageGenerationLog');
 const Novel = require('../models/Novel');
 const User = require('../models/User');
@@ -288,15 +289,7 @@ const generateImage = async (req, res) => {
       pageContent = await getTextPageContent(novel.filePath, pageNum);
     }
 
-    // Create a better prompt for the AI by analyzing the content
-    // First, clean up the content
-    const cleanContent = pageContent
-      .replace(/\s+/g, ' ')  // Replace multiple spaces with a single space
-      .replace(/[\r\n]+/g, ' ')  // Replace newlines with spaces
-      .trim();
-
     // Extract key information for a better prompt
-    let promptContent = '';
     let chapterInfo = '';
 
     // If it's an EPUB, we might have chapter information
@@ -307,50 +300,24 @@ const generateImage = async (req, res) => {
       }
     }
 
-    // Try to extract a meaningful scene description
-    // Look for sentences that contain descriptive elements
-    const sentences = cleanContent.split(/[.!?]\s+/);
+    console.log('Using AI to summarize text for better image generation');
 
-    // Keywords that might indicate descriptive content
-    const descriptiveKeywords = [
-      'looked', 'appeared', 'saw', 'scene', 'view', 'landscape',
-      'room', 'stood', 'sat', 'walked', 'forest', 'sky', 'mountain',
-      'river', 'building', 'castle', 'house', 'street', 'city',
-      'village', 'field', 'garden', 'beach', 'ocean', 'sea',
-      'wearing', 'dressed', 'clothes', 'face', 'eyes', 'hair',
-      'tall', 'short', 'large', 'small', 'beautiful', 'handsome',
-      'ugly', 'dark', 'light', 'bright', 'dim', 'red', 'blue',
-      'green', 'yellow', 'black', 'white', 'color'
-    ];
+    // Use AI to summarize the text and extract visually descriptive elements
+    const summarizedContent = await getSummarizedText(
+      pageContent,
+      novel.title,
+      chapterInfo,
+      200 // Max length of summary
+    );
 
-    // Find sentences with descriptive content
-    const descriptiveSentences = sentences.filter(sentence => {
-      const lowerSentence = sentence.toLowerCase();
-      return descriptiveKeywords.some(keyword => lowerSentence.includes(keyword));
-    });
-
-    if (descriptiveSentences.length > 0) {
-      // Use the most descriptive sentence (usually the longest one with keywords)
-      promptContent = descriptiveSentences.sort((a, b) => b.length - a.length)[0];
-    } else if (sentences.length > 0) {
-      // If no descriptive sentences found, use the first non-empty sentence
-      promptContent = sentences.find(s => s.trim().length > 20) || sentences[0];
-    } else {
-      // Fallback to first 100 characters
-      promptContent = cleanContent.substring(0, 100);
-    }
-
-    // Ensure the prompt isn't too long (max 200 chars for the content part)
-    if (promptContent.length > 200) {
-      promptContent = promptContent.substring(0, 197) + '...';
-    }
+    console.log('Text summarization result:', summarizedContent);
 
     // Create a descriptive prompt for better image generation
     let prompt;
     if (chapterInfo) {
-      prompt = `Scene from "${novel.title}" (${chapterInfo}): ${promptContent}`;
+      prompt = `Scene from "${novel.title}" (${chapterInfo}): ${summarizedContent}`;
     } else {
-      prompt = `Scene from "${novel.title}": ${promptContent}`;
+      prompt = `Scene from "${novel.title}": ${summarizedContent}`;
     }
 
     // Generate image with AI

@@ -240,6 +240,34 @@ const getReadingPreferences = async (req, res) => {
   }
 };
 
+// Reset user reading statistics
+const resetReadingStats = async (req, res) => {
+  try {
+    // Get current user
+    const user = await User.findById(req.user.userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Reset stats
+    user.readingStats = {
+      totalReadingTime: 0,
+      pagesRead: 0,
+      novelsCompleted: 0,
+      imagesGenerated: 0,
+    };
+
+    await user.save();
+
+    res.status(200).json({
+      message: 'Reading statistics reset successfully',
+      stats: user.readingStats
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 module.exports = {
   getUserProfile,
   updateUserProfile,
@@ -249,4 +277,5 @@ module.exports = {
   getReadingPreferences,
   getAllUsers,
   deleteUser,
+  resetReadingStats,
 };

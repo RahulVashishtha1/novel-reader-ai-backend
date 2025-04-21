@@ -576,15 +576,38 @@ const updateReadingProgress = async (req, res) => {
     // Update progress
     if (page) {
       novel.lastReadPage = page;
+
+      // Auto-mark as completed if user reaches the last page
+      if (page >= novel.totalPages && !novel.completed) {
+        novel.completed = true;
+
+        // Update user's completion stats
+        const user = await User.findById(req.user.userId);
+        user.readingStats.novelsCompleted += 1;
+        await user.save();
+      }
     }
 
     if (readingTime) {
-      novel.totalReadingTime += readingTime;
+      // Validate reading time (should be in minutes, not hours)
+      const validReadingTime = Math.min(readingTime, 60); // Cap at 60 minutes per update as a safeguard
+
+      novel.totalReadingTime += validReadingTime;
 
       // Update user's reading stats
       const user = await User.findById(req.user.userId);
-      user.readingStats.totalReadingTime += readingTime;
-      user.readingStats.pagesRead += 1;
+      user.readingStats.totalReadingTime += validReadingTime;
+
+      // Only increment pagesRead if the page has changed
+      const previousPage = novel.lastReadPage;
+      if (page && page !== previousPage) {
+        // Calculate how many new pages were read
+        const pagesRead = Math.max(0, page - previousPage);
+        if (pagesRead > 0) {
+          user.readingStats.pagesRead += pagesRead;
+        }
+      }
+
       await user.save();
     }
 

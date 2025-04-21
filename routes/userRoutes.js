@@ -9,6 +9,7 @@ const {
   getReadingPreferences,
   getAllUsers,
   deleteUser,
+  resetReadingStats,
 } = require('../controllers/userController');
 const { authenticateUser, authorizeAdmin } = require('../middlewares/auth');
 
@@ -19,6 +20,7 @@ router.get('/stats', authenticateUser, getUserStats);
 router.patch('/stats', authenticateUser, updateReadingStats);
 router.get('/preferences', authenticateUser, getReadingPreferences);
 router.patch('/preferences', authenticateUser, updateReadingPreferences);
+router.post('/stats/reset', authenticateUser, resetReadingStats);
 
 // Admin routes
 router.get('/all', authenticateUser, authorizeAdmin, getAllUsers);

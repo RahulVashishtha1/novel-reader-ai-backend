@@ -11,7 +11,12 @@ dotenv.config();
 const app = express();
 
 // Middleware
-app.use(cors());
+// CORS setup: restrict in production, allow all in dev
+const allowedOrigin = process.env.FRONTEND_URL || '*';
+app.use(cors({
+  origin: allowedOrigin,
+  credentials: true
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 

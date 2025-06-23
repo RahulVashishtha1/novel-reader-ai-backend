@@ -17,6 +17,17 @@ try {
   console.log('Hugging Face inference package not available, using Cloudflare AI only');
 }
 
+// Helper to upload buffer to Cloudinary and return the result
+const uploadToCloudinary = (buffer, options) => {
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(options, (error, result) => {
+      if (error) return reject(error);
+      resolve(result);
+    });
+    stream.end(buffer);
+  });
+};
+
 // Function for AI image generation using Cloudflare Workers AI (with Hugging Face fallback)
 const generateImageWithAI = async (prompt, style) => {
   console.log(`Generating image with prompt: "${prompt}" and style: ${style}`);
@@ -123,14 +134,11 @@ const generateImageWithAI = async (prompt, style) => {
     }
 
     // After generating imageBuffer, upload to Cloudinary
-    const uploadResult = await cloudinary.uploader.upload_stream({
+    const uploadResult = await uploadToCloudinary(imageBuffer, {
       folder: 'images',
       resource_type: 'image',
       public_id: `generated_${Date.now()}`,
       overwrite: true,
-    }, (error, result) => {
-      if (error) throw error;
-      return result;
     });
 
     // Return the Cloudinary URL
@@ -275,6 +283,12 @@ const generateImage = async (req, res) => {
       return res.status(400).json({ message: 'Invalid page number' });
     }
 
+    // Defensive check for filePath
+    if (!novel.filePath || typeof novel.filePath !== 'string') {
+      console.error('Invalid novel.filePath in image generation:', novel.filePath, 'for novel:', novelId);
+      return res.status(500).json({ message: 'Internal error: invalid novel file path' });
+    }
+
     // Get page content to use as prompt
     let pageContent;
     // Import the functions from novelController
@@ -334,6 +348,29 @@ const generateImage = async (req, res) => {
       style: imageResult.style,
       error: imageResult.error || 'none'
     });
+
+    // If imageResult.imageUrl is a Cloudinary URL, use it directly
+    if (imageResult.imageUrl && imageResult.imageUrl.startsWith('http')) {
+      // Log the image generation
+      const imageLog = await ImageGenerationLog.create({
+        novel: novelId,
+        user: req.user.userId,
+        page: pageNum,
+        imageUrl: imageResult.imageUrl,
+        style,
+        prompt,
+        error: imageResult.error || null,
+        generationMethod: imageResult.generationMethod || 'cloudflare'
+      });
+
+      // Update user's image generation count
+      const user = await User.findById(req.user.userId);
+      user.readingStats.imagesGenerated += 1;
+      await user.save();
+
+      console.log('Sending response with image:', imageLog);
+      return res.status(200).json({ image: imageLog });
+    }
 
     // Check if the image path exists
     const fullImagePath = path.join(process.cwd(), 'uploads', imageResult.imageUrl);

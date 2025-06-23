@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const path = require('path');
 const fs = require('fs');
 const { createCanvas, loadImage } = require('canvas');
+const { v2: cloudinary } = require('cloudinary');
 
 // Generate a unique share ID
 const generateShareId = () => {
@@ -668,41 +669,30 @@ const generateSocialImage = async (req, res) => {
     // Convert canvas to buffer
     const buffer = canvas.toBuffer('image/png');
 
-    // Save the image
-    const imageDir = path.join(__dirname, '..', 'uploads', 'social');
-    if (!fs.existsSync(imageDir)) {
-      fs.mkdirSync(imageDir, { recursive: true });
-    }
+    // Upload to Cloudinary
+    const uploadResult = await new Promise((resolve, reject) => {
+      cloudinary.uploader.upload_stream({
+        folder: 'social',
+        resource_type: 'image',
+        public_id: `social_${shareId || Date.now()}`,
+        overwrite: true,
+      }, (error, result) => {
+        if (error) reject(error);
+        else resolve(result);
+      }).end(buffer);
+    });
 
-    // Different handling for preview vs. real social image
-    if (isPreview) {
-      // For preview, save with a temporary name
-      const previewName = `preview_${Date.now()}.png`;
-      const previewPath = path.join(imageDir, previewName);
-      fs.writeFileSync(previewPath, buffer);
-
-      // Return the preview URL
-      const previewUrl = `uploads/social/${previewName}`;
-      res.status(200).json({
-        previewUrl,
-        fullUrl: `${process.env.BACKEND_URL || 'http://localhost:5000'}/${previewUrl}`
-      });
-    } else {
-      // For real social image, save with the share ID
-      const imageName = `social_${shareId}.png`;
-      const imagePath = path.join(imageDir, imageName);
-      fs.writeFileSync(imagePath, buffer);
-
-      // Update shared content with image URL
-      const socialImageUrl = `uploads/social/${imageName}`;
-      sharedContent.socialImageUrl = socialImageUrl;
+    // For real social image, update sharedContent
+    if (!isPreview && sharedContent) {
+      sharedContent.socialImageUrl = uploadResult.secure_url;
       await sharedContent.save();
-
-      res.status(200).json({
-        socialImageUrl,
-        fullUrl: `${process.env.BACKEND_URL || 'http://localhost:5000'}/${socialImageUrl}`
-      });
     }
+
+    // Respond with the Cloudinary URL
+    res.status(200).json({
+      socialImageUrl: uploadResult.secure_url,
+      fullUrl: uploadResult.secure_url
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

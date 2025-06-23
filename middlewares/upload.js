@@ -1,74 +1,65 @@
 const multer = require('multer');
-const path = require('path');
+const { CloudinaryStorage } = require('multer-storage-cloudinary');
+const { v2: cloudinary } = require('cloudinary');
+require('dotenv').config();
 
-// Configure storage for novels
-const novelStorage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, 'uploads/novels');
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    cb(null, uniqueSuffix + path.extname(file.originalname));
-  },
-});
-
-// Configure storage for images
-const imageStorage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, 'uploads/images');
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    cb(null, uniqueSuffix + path.extname(file.originalname));
-  },
+// Configure Cloudinary
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
 // File filter for novels
 const novelFilter = (req, file, cb) => {
-  console.log('Uploaded file:', file.originalname, file.mimetype);
-
-  // Get the file extension and check if it's valid
-  const extension = path.extname(file.originalname).toLowerCase();
-
-  // Check if the extension is valid (.txt or .epub)
-  if (extension !== '.txt' && extension !== '.epub') {
-    console.log('Invalid extension:', extension);
+  const extension = (file.originalname || '').split('.').pop().toLowerCase();
+  if (extension !== 'txt' && extension !== 'epub') {
     return cb(new Error('Only .txt and .epub files are allowed!'));
   }
-
-  // If we get here, the file is valid
   return cb(null, true);
 };
 
 // File filter for images
 const imageFilter = (req, file, cb) => {
-  console.log('Uploaded image:', file.originalname, file.mimetype);
-
-  // Get the file extension and check if it's valid
-  const extension = path.extname(file.originalname).toLowerCase();
-
-  // Check if the extension is valid (image file)
-  if (extension !== '.jpg' && extension !== '.jpeg' && extension !== '.png' && extension !== '.gif') {
-    console.log('Invalid image extension:', extension);
+  const extension = (file.originalname || '').split('.').pop().toLowerCase();
+  if (!['jpg', 'jpeg', 'png', 'gif'].includes(extension)) {
     return cb(new Error('Only image files (jpg, jpeg, png, gif) are allowed!'));
   }
-
-  // If we get here, the file is valid
   return cb(null, true);
 };
 
-// Create upload middleware for novels
+// Cloudinary storage for novels
+const novelStorage = new CloudinaryStorage({
+  cloudinary,
+  params: {
+    folder: 'novels',
+    resource_type: 'raw', // for txt/epub
+    format: async (req, file) => file.originalname.split('.').pop(),
+    public_id: (req, file) => `${Date.now()}-${Math.round(Math.random() * 1e9)}`,
+  },
+});
+
+// Cloudinary storage for images
+const imageStorage = new CloudinaryStorage({
+  cloudinary,
+  params: {
+    folder: 'images',
+    resource_type: 'image',
+    format: async (req, file) => file.originalname.split('.').pop(),
+    public_id: (req, file) => `${Date.now()}-${Math.round(Math.random() * 1e9)}`,
+  },
+});
+
 const uploadNovel = multer({
   storage: novelStorage,
   fileFilter: novelFilter,
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
 });
 
-// Create upload middleware for images
 const uploadImage = multer({
   storage: imageStorage,
   fileFilter: imageFilter,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
 });
 
 module.exports = { uploadNovel, uploadImage };

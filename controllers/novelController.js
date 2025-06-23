@@ -70,7 +70,7 @@ const uploadNovel = async (req, res) => {
       return res.status(400).json({ message: 'Title is required' });
     }
 
-    const filePath = req.file.path;
+    const filePath = req.file.path || req.file.url; // Cloudinary URL
     const fileExtension = path.extname(req.file.originalname).toLowerCase();
     const fileType = fileExtension === '.epub' ? 'epub' : 'txt';
 

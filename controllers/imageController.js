@@ -6,6 +6,7 @@ const { getSummarizedText } = require('../utils/textSummarizer');
 const ImageGenerationLog = require('../models/ImageGenerationLog');
 const Novel = require('../models/Novel');
 const User = require('../models/User');
+const { v2: cloudinary } = require('cloudinary');
 
 // Optional: Keep Hugging Face for backward compatibility
 let hf;
@@ -121,15 +122,20 @@ const generateImageWithAI = async (prompt, style) => {
       }
     }
 
-    // Save the image to disk
-    fs.writeFileSync(imagePath, imageBuffer);
-    console.log(`Image saved to ${imagePath} using ${generationMethod}`);
+    // After generating imageBuffer, upload to Cloudinary
+    const uploadResult = await cloudinary.uploader.upload_stream({
+      folder: 'images',
+      resource_type: 'image',
+      public_id: `generated_${Date.now()}`,
+      overwrite: true,
+    }, (error, result) => {
+      if (error) throw error;
+      return result;
+    });
 
-    // Return the relative path to the image
-    // Use forward slashes for URLs, not path.join which uses OS-specific separators
-    const relativePath = `images/${imageName}`;
+    // Return the Cloudinary URL
     return {
-      imageUrl: relativePath,
+      imageUrl: uploadResult.secure_url,
       prompt: prompt,
       style,
       generationMethod

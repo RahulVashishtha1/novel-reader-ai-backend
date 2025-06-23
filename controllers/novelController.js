@@ -3,57 +3,68 @@ const path = require('path');
 const Novel = require('../models/Novel');
 const User = require('../models/User');
 const epub = require('epub');
+const axios = require('axios');
+const os = require('os');
+const fsPromises = require('fs').promises;
 
-// Helper function to count pages in a text file
-const countPagesInTextFile = (filePath, wordsPerPage = 600) => {
-  return new Promise((resolve, reject) => {
-    fs.readFile(filePath, 'utf8', (err, data) => {
-      if (err) {
-        reject(err);
-        return;
-      }
+// Helper function to check if a path is a URL
+function isUrl(path) {
+  return /^https?:\/\//.test(path);
+}
 
-      const words = data.split(/\s+/).filter(word => word.length > 0);
-      const totalPages = Math.ceil(words.length / wordsPerPage);
-      resolve(totalPages);
-    });
-  });
+// Helper function to count pages in a text file (local or remote)
+const countPagesInTextFile = async (filePath, wordsPerPage = 600) => {
+  let data;
+  if (isUrl(filePath)) {
+    const response = await axios.get(filePath);
+    data = response.data;
+  } else {
+    data = await fsPromises.readFile(filePath, 'utf8');
+  }
+  const words = data.split(/\s+/).filter(word => word.length > 0);
+  const totalPages = Math.ceil(words.length / wordsPerPage);
+  return totalPages;
 };
 
-// Helper function to count pages in an EPUB file
-const countPagesInEpubFile = (filePath, wordsPerPage = 600) => {
+// Helper function to count pages in an EPUB file (local or remote)
+const countPagesInEpubFile = async (filePath, wordsPerPage = 600) => {
+  let localPath = filePath;
+  let tempFile = null;
+  if (isUrl(filePath)) {
+    // Download to temp file
+    const response = await axios.get(filePath, { responseType: 'arraybuffer' });
+    tempFile = `${os.tmpdir()}/epub_${Date.now()}_${Math.random().toString(36).slice(2)}.epub`;
+    await fsPromises.writeFile(tempFile, response.data);
+    localPath = tempFile;
+  }
+  const epubBook = new epub(localPath);
   return new Promise((resolve, reject) => {
-    const epubBook = new epub(filePath);
-
-    epubBook.on('error', err => {
+    epubBook.on('error', async err => {
+      if (tempFile) await fsPromises.unlink(tempFile).catch(() => {});
       reject(err);
     });
-
-    epubBook.on('end', () => {
+    epubBook.on('end', async () => {
       let totalWords = 0;
-
-      // Get the total word count from all chapters
+      let processed = 0;
       epubBook.flow.forEach(chapter => {
         epubBook.getChapter(chapter.id, (err, text) => {
           if (err) {
+            if (tempFile) fsPromises.unlink(tempFile).catch(() => {});
             reject(err);
             return;
           }
-
-          // Remove HTML tags and count words
           const plainText = text.replace(/<[^>]*>/g, '');
           const words = plainText.split(/\s+/).filter(word => word.length > 0);
           totalWords += words.length;
-
-          // If this is the last chapter, calculate total pages
-          if (chapter.id === epubBook.flow[epubBook.flow.length - 1].id) {
+          processed++;
+          if (processed === epubBook.flow.length) {
+            if (tempFile) fsPromises.unlink(tempFile).catch(() => {});
             const totalPages = Math.ceil(totalWords / wordsPerPage);
             resolve(totalPages);
           }
         });
       });
     });
-
     epubBook.parse();
   });
 };
@@ -200,136 +211,99 @@ const getNovelPage = async (req, res) => {
   }
 };
 
-// Helper function to get content from a text file for a specific page
-const getTextPageContent = (filePath, pageNum, wordsPerPage = 600) => {
-  return new Promise((resolve, reject) => {
-    fs.readFile(filePath, 'utf8', (err, data) => {
-      if (err) {
-        reject(err);
-        return;
-      }
-
-      // Normalize line endings but preserve all other formatting
-      data = data.replace(/\r\n/g, '\n');
-
-      // Split the text into lines to preserve all formatting
-      const lines = data.split('\n');
-
-      // Calculate approximate characters per page (average 5 chars per word)
-      const charsPerPage = wordsPerPage * 5;
-
-      // Calculate total characters
-      const totalChars = data.length;
-
-      // Calculate start and end positions for the requested page
-      const startPos = Math.max(0, Math.min(totalChars, Math.floor((pageNum - 1) * charsPerPage)));
-      const endPos = Math.max(startPos, Math.min(totalChars, Math.floor(pageNum * charsPerPage)));
-
-      // Find the lines that contain the start and end positions
-      let currentPos = 0;
-      let startLine = 0;
-      let endLine = lines.length - 1;
-
-      // Find the start line
-      for (let i = 0; i < lines.length; i++) {
-        const lineLength = lines[i].length + 1; // +1 for the newline character
-        if (currentPos + lineLength > startPos) {
-          startLine = i;
-          break;
-        }
-        currentPos += lineLength;
-      }
-
-      // Find the end line
-      currentPos = 0;
-      for (let i = 0; i < lines.length; i++) {
-        const lineLength = lines[i].length + 1; // +1 for the newline character
-        currentPos += lineLength;
-        if (currentPos >= endPos) {
-          endLine = i;
-          break;
-        }
-      }
-
-      // Extract the content for this page, preserving all formatting
-      const pageContent = lines.slice(startLine, endLine + 1).join('\n');
-
-      // If the page is empty, return an empty string
-      if (!pageContent.trim()) {
-        resolve('');
-        return;
-      }
-
-      resolve(pageContent);
-    });
-  });
+// Helper function to get content from a text file for a specific page (local or remote)
+const getTextPageContent = async (filePath, pageNum, wordsPerPage = 600) => {
+  let data;
+  if (isUrl(filePath)) {
+    const response = await axios.get(filePath);
+    data = response.data;
+  } else {
+    data = await fsPromises.readFile(filePath, 'utf8');
+  }
+  data = data.replace(/\r\n/g, '\n');
+  const lines = data.split('\n');
+  const charsPerPage = wordsPerPage * 5;
+  const totalChars = data.length;
+  const startPos = Math.max(0, Math.min(totalChars, Math.floor((pageNum - 1) * charsPerPage)));
+  const endPos = Math.max(startPos, Math.min(totalChars, Math.floor(pageNum * charsPerPage)));
+  let currentPos = 0;
+  let startLine = 0;
+  let endLine = lines.length - 1;
+  for (let i = 0; i < lines.length; i++) {
+    const lineLength = lines[i].length + 1;
+    if (currentPos + lineLength > startPos) {
+      startLine = i;
+      break;
+    }
+    currentPos += lineLength;
+  }
+  currentPos = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const lineLength = lines[i].length + 1;
+    currentPos += lineLength;
+    if (currentPos >= endPos) {
+      endLine = i;
+      break;
+    }
+  }
+  const pageContent = lines.slice(startLine, endLine + 1).join('\n');
+  return pageContent.trim() ? pageContent : '';
 };
 
-// Helper function to get content from an EPUB file for a specific page
-const getEpubPageContent = (filePath, pageNum, wordsPerPage = 600) => {
+// Helper function to get content from an EPUB file for a specific page (local or remote)
+const getEpubPageContent = async (filePath, pageNum, wordsPerPage = 600) => {
+  let localPath = filePath;
+  let tempFile = null;
+  if (isUrl(filePath)) {
+    // Download to temp file
+    const response = await axios.get(filePath, { responseType: 'arraybuffer' });
+    tempFile = `${os.tmpdir()}/epub_${Date.now()}_${Math.random().toString(36).slice(2)}.epub`;
+    await fsPromises.writeFile(tempFile, response.data);
+    localPath = tempFile;
+  }
+  const epubBook = new epub(localPath);
   return new Promise((resolve, reject) => {
-    const epubBook = new epub(filePath);
-
-    epubBook.on('error', err => {
+    epubBook.on('error', async err => {
+      if (tempFile) await fsPromises.unlink(tempFile).catch(() => {});
       reject(err);
     });
-
-    epubBook.on('end', () => {
-      // Store all chapters with their HTML content
+    epubBook.on('end', async () => {
       const chapters = [];
       let processedChapters = 0;
       let totalWords = 0;
       let chapterWordCounts = [];
-
-      // Get text from all chapters
       epubBook.flow.forEach(chapter => {
         epubBook.getChapter(chapter.id, (err, text) => {
           if (err) {
+            if (tempFile) fsPromises.unlink(tempFile).catch(() => {});
             reject(err);
             return;
           }
-
-          // Clean up HTML content
           let cleanHtml = text
-            .replace(/<\/?(?:div|span|section)(?:\s[^>]*)?>/g, '') // Remove div, span, section tags
-            .replace(/<br\s*\/?>/g, '\n') // Convert <br> to newlines
-            .replace(/\s*\n\s*/g, '\n') // Normalize newlines
-            .replace(/\n{3,}/g, '\n\n'); // Limit consecutive newlines
-
-          // Extract plain text for word counting
-          const plainText = cleanHtml.replace(/<[^>]*>/g, '')
-            .replace(/\s+/g, ' ')
-            .trim();
-
-          // Store the chapter with its HTML content
+            .replace(/<\/?(?:div|span|section)(?:\s[^>]*)?>/g, '')
+            .replace(/<br\s*\/?/g, '\n')
+            .replace(/\s*\n\s*/g, '\n')
+            .replace(/\n{3,}/g, '\n\n');
+          const plainText = cleanHtml.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
           chapters.push({
             id: chapter.id,
             content: cleanHtml,
             plainText: plainText,
             title: chapter.title || `Chapter ${chapters.length + 1}`
           });
-
-          // Count words for pagination
           const words = plainText.split(/\s+/).filter(word => word.length > 0);
           chapterWordCounts.push(words.length);
           totalWords += words.length;
-
           processedChapters++;
-
-          // If all chapters are processed, get the page content
           if (processedChapters === epubBook.flow.length) {
-            // Sort chapters by their order in the book
             chapters.sort((a, b) => {
               return epubBook.flow.findIndex(ch => ch.id === a.id) -
                      epubBook.flow.findIndex(ch => ch.id === b.id);
             });
-
-            // Calculate which chapter contains the requested page
             const startWordIndex = (pageNum - 1) * wordsPerPage;
             let currentWordCount = 0;
             let targetChapterIndex = -1;
             let wordOffsetInChapter = 0;
-
             for (let i = 0; i < chapterWordCounts.length; i++) {
               if (startWordIndex < currentWordCount + chapterWordCounts[i]) {
                 targetChapterIndex = i;
@@ -338,24 +312,15 @@ const getEpubPageContent = (filePath, pageNum, wordsPerPage = 600) => {
               }
               currentWordCount += chapterWordCounts[i];
             }
-
             if (targetChapterIndex === -1 || startWordIndex >= totalWords) {
+              if (tempFile) fsPromises.unlink(tempFile).catch(() => {});
               resolve({ content: '', isHtml: true });
               return;
             }
-
-            // Get the target chapter
             const targetChapter = chapters[targetChapterIndex];
-
-            // For better readability, return the entire chapter content
-            // This ensures we have complete paragraphs and proper context
             const htmlContent = targetChapter.content;
-
-            // Extract chapter title for better context
-            const chapterTitle = epubBook.flow[targetChapterIndex].title ||
-                               `Chapter ${targetChapterIndex + 1}`;
-
-            // Return both HTML content and information about the chapter
+            const chapterTitle = epubBook.flow[targetChapterIndex].title || `Chapter ${targetChapterIndex + 1}`;
+            if (tempFile) fsPromises.unlink(tempFile).catch(() => {});
             resolve({
               content: htmlContent,
               isHtml: true,
@@ -371,7 +336,6 @@ const getEpubPageContent = (filePath, pageNum, wordsPerPage = 600) => {
         });
       });
     });
-
     epubBook.parse();
   });
 };

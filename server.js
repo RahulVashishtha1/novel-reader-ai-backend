@@ -11,10 +11,13 @@ dotenv.config();
 const app = express();
 
 // Middleware
-// CORS setup: restrict in production, allow all in dev
-const allowedOrigin = process.env.FRONTEND_URL || '*';
+// CORS setup: allow only production and local dev frontends
+const allowedOrigins = [
+  'https://visnovel-nine.vercel.app', // production frontend
+  'http://localhost:5173'            // local dev frontend (Vite default)
+];
 app.use(cors({
-  origin: allowedOrigin,
+  origin: allowedOrigins,
   credentials: true
 }));
 app.use(express.json());
